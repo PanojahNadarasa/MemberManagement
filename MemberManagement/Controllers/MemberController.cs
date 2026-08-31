@@ -97,6 +97,98 @@ namespace MemberManagement.Controllers
 
             return Ok(member);
         }
+        // PUT: api/members/{id}
+        [HttpPut("{id:guid}")]
+        public async Task<ActionResult<MemberEntity>> UpdateMember(
+            Guid id,
+            MemberEntity updatedMember)
+        {
+            var member = await _context.members
+                .FirstOrDefaultAsync(x => x.MemberId == id);
+
+            if (member == null)
+            {
+                return NotFound(new
+                {
+                    message = "Member not found."
+                });
+            }
+
+            // Date of birth validation
+            if (updatedMember.DateOfBirth.Date > DateTime.UtcNow.Date)
+            {
+                return BadRequest(new
+                {
+                    message = "Date of birth cannot be in the future."
+                });
+            }
+
+            var validationError = ValidateMemberType(
+                updatedMember.DateOfBirth,
+                updatedMember.MemberType);
+
+            if (validationError != null)
+            {
+                return BadRequest(new
+                {
+                    message = validationError
+                });
+            }
+
+            member.FirstName = updatedMember.FirstName;
+            member.LastName = updatedMember.LastName;
+            member.Email = updatedMember.Email;
+            member.DateOfBirth = updatedMember.DateOfBirth;
+            member.MemberType = updatedMember.MemberType;
+            member.IsActive = updatedMember.IsActive;
+
+            await _context.SaveChangesAsync();
+
+            return Ok(member);
+        }
+        // DELETE: api/members/{id}
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> DeleteMember(Guid id)
+        {
+            var member = await _context.members
+                .FirstOrDefaultAsync(x => x.MemberId == id);
+
+            if (member == null)
+            {
+                return NotFound(new
+                {
+                    message = "Member not found."
+                });
+            }
+
+            _context.members.Remove(member);
+
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+           
+        // PATCH: api/members/{id}
+        [HttpPatch("{id:guid}/status")]
+        public async Task<ActionResult<MemberEntity>> UpdateStatus( Guid id,[FromBody] bool isActive)
+        {
+            var member = await _context.members
+                .FirstOrDefaultAsync(x => x.MemberId == id);
+
+            if (member == null)
+            {
+                return NotFound(new
+                {
+                    message = "Member not found."
+                });
+            }
+
+            member.IsActive = isActive;
+
+            await _context.SaveChangesAsync();
+
+            return Ok(member);
+        }
 
         //Validation checking
         private static string? ValidateMemberType(DateTime dateOfBirth, MemberType memberType)
