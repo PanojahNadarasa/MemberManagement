@@ -1,8 +1,10 @@
 ﻿using System.Net;
 using System.Net.Http.Json;
 using MemberManagement.Data;
+using MemberManagement.DTOs;
 using MemberManagement.Entity;
 using MemberManagement.Enums;
+using MemberManagement.Services;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +18,7 @@ namespace MemberManagement.Tests
 
         public MemberControllerTest(WebApplicationFactory<Program> factory)
         {
-            var dbName = "MemberTestDb_" + Guid.NewGuid(); 
+            var dbName = "MemberTestDb_" + Guid.NewGuid();
 
             _factory = factory.WithWebHostBuilder(builder =>
             {
@@ -32,7 +34,7 @@ namespace MemberManagement.Tests
 
                     services.AddDbContext<ApplicationDbContext>(options =>
                     {
-                        options.UseInMemoryDatabase(dbName); 
+                        options.UseInMemoryDatabase(dbName);
                     });
                 });
             });
@@ -120,7 +122,7 @@ namespace MemberManagement.Tests
                 context.members.Add(member);
 
                 await context.SaveChangesAsync();
-               // var savedCount = context.members.Count(x => x.MemberId == id);
+                // var savedCount = context.members.Count(x => x.MemberId == id);
 
             }
 
@@ -369,5 +371,84 @@ namespace MemberManagement.Tests
 
             Assert.Null(deletedMember);
         }
+
+        //DUPLICATE REGISTRATION NUMBER
+        [Fact]
+        public async Task CreateMember_DuplicateRegistrationNumber_ReturnsError()
+        {
+            // Arrange
+            await ClearDatabaseAsync();
+
+            var client = CreateClient();
+
+            var member = new CreateMemberRequest
+            {
+                RegistrationNumber = "976111788V",
+                FirstName = "John",
+                LastName = "Smith",
+                Email = "johnsmith@test.com",
+                DateOfBirth = new DateTime(1990, 5, 10),
+                MemberType = MemberType.Major,
+                IsActive = true
+            };        
+            var firstResponse = await client.PostAsJsonAsync( "/api/members",member);
+            Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
+
+            // Act - Try to create another member with the same registration number
+            var duplicateMember = new CreateMemberRequest
+            {
+                RegistrationNumber = "976111788V",
+                FirstName = "David",
+                LastName = "Perera",
+                Email = "david@test.com",
+                DateOfBirth = new DateTime(1992, 8, 15),
+                MemberType = MemberType.Major,
+                IsActive = true
+            };
+
+            var response = await client.PostAsJsonAsync("/api/members", duplicateMember);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+            var responseBody = await response.Content.ReadAsStringAsync();
+
+            Assert.Contains(
+                "Registration number already exists.",
+                responseBody);
+        }
+
+        //FUTURE DATE OF BIRTH 
+        [Fact]
+        public async Task CreateMember_FutureDateOfBirth_ReturnsError()
+        {
+            await ClearDatabaseAsync();
+
+            var client = CreateClient();
+
+            var member = new CreateMemberRequest
+            {
+                RegistrationNumber = "976111789V",
+                FirstName = "John",
+                LastName = "Peter",
+                Email = "john@test.com",
+
+                // Future date
+                DateOfBirth = DateTime.UtcNow.AddDays(1),
+
+                MemberType = MemberType.Major,
+                IsActive = true
+            };
+
+            var response = await client.PostAsJsonAsync("/api/members",member);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+            var responseBody =await response.Content.ReadAsStringAsync();
+
+            Assert.Contains("Date of birth cannot be in the future.",responseBody);
+
+        }
+
     }
 }

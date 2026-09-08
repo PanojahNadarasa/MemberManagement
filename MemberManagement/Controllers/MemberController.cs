@@ -1,8 +1,6 @@
-﻿using MemberManagement.Data;
-using MemberManagement.Entity;
-using MemberManagement.Enums;
+﻿using MemberManagement.DTOs;
+using MemberManagement.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace MemberManagement.Controllers
 {
@@ -10,82 +8,49 @@ namespace MemberManagement.Controllers
     [Route("api/members")]
     public class MemberController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private readonly IMemberService _memberService;
 
-        public MemberController(ApplicationDbContext context)
+    public MemberController(IMemberService memberService)
         {
-            _context = context;
+            _memberService = memberService;
         }
 
         // POST: api/members
         [HttpPost]
-        public async Task<ActionResult<MemberEntity>> CreateMember(MemberEntity member)
+        public async Task<IActionResult> CreateMember([FromBody] CreateMemberRequest request)
         {
-            // duplicate check 
-            var registrationExists = await _context.members
-                .AnyAsync(x =>
-                    x.RegistrationNumber == member.RegistrationNumber);
+            var result = await _memberService.CreateMemberAsync(request);
 
-            if (registrationExists)
+            if (!result.Success)
             {
                 return BadRequest(new
                 {
-                    message = "Registration number already exists."
+                    message = result.ErrorMessage
                 });
             }
-
-            // Date of birth cannot be future
-            if (member.DateOfBirth.Date > DateTime.UtcNow.Date)
-            {
-                return BadRequest(new
-                {
-                    message = "Date of birth cannot be in the future."
-                });
-            }
-
-          //MemberType validation checking
-          var validationError = ValidateMemberType(
-           member.DateOfBirth,
-           member.MemberType);
-
-            if (validationError != null)
-            {
-                return BadRequest(new
-                {
-                    message = validationError
-                });
-            }
-
-            member.MemberId = Guid.NewGuid();
-
-            _context.members.Add(member);
-
-            await _context.SaveChangesAsync();
 
             return CreatedAtAction(
                 nameof(GetMember),
-                new { id = member.MemberId },
-                member);
+                new { id = result.Member!.MemberId },
+                result.Member);
         }
 
         // GET: api/members
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<MemberEntity>>> GetMembers()
+        public async Task<IActionResult> GetMembers()
         {
-            var members = await _context.members
-                .AsNoTracking()
-                .ToListAsync();
+            var members =
+                await _memberService.GetMembersAsync();
 
             return Ok(members);
         }
 
         // GET: api/members/{id}
         [HttpGet("{id:guid}")]
-        public async Task<ActionResult<MemberEntity>> GetMember(Guid id)
+        public async Task<IActionResult> GetMember(Guid id)
         {
-            var member = await _context.members
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.MemberId == id);
+            var member =
+                await _memberService.GetMemberAsync(id);
 
             if (member == null)
             {
@@ -97,130 +62,64 @@ namespace MemberManagement.Controllers
 
             return Ok(member);
         }
+
         // PUT: api/members/{id}
         [HttpPut("{id:guid}")]
-        public async Task<ActionResult<MemberEntity>> UpdateMember(
-            Guid id,
-            MemberEntity updatedMember)
+        public async Task<IActionResult> UpdateMember(Guid id,[FromBody] UpdateMemberRequest request)
         {
-            var member = await _context.members
-                .FirstOrDefaultAsync(x => x.MemberId == id);
+            var result = await _memberService.UpdateMemberAsync(id,request);
 
-            if (member == null)
+            if (!result.Success)
             {
-                return NotFound(new
+                if (result.ErrorMessage == "Member not found.")
                 {
-                    message = "Member not found."
-                });
-            }
+                    return NotFound(new
+                    {
+                        message = result.ErrorMessage
+                    });
+                }
 
-            // Date of birth validation
-            if (updatedMember.DateOfBirth.Date > DateTime.UtcNow.Date)
-            {
                 return BadRequest(new
                 {
-                    message = "Date of birth cannot be in the future."
+                    message = result.ErrorMessage
                 });
             }
 
-            var validationError = ValidateMemberType(
-                updatedMember.DateOfBirth,
-                updatedMember.MemberType);
-
-            if (validationError != null)
-            {
-                return BadRequest(new
-                {
-                    message = validationError
-                });
-            }
-
-            member.FirstName = updatedMember.FirstName;
-            member.LastName = updatedMember.LastName;
-            member.Email = updatedMember.Email;
-            member.DateOfBirth = updatedMember.DateOfBirth;
-            member.MemberType = updatedMember.MemberType;
-            member.IsActive = updatedMember.IsActive;
-
-            await _context.SaveChangesAsync();
-
-            return Ok(member);
+            return Ok(result.Member);
         }
         // DELETE: api/members/{id}
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> DeleteMember(Guid id)
         {
-            var member = await _context.members
-                .FirstOrDefaultAsync(x => x.MemberId == id);
+            var result = await _memberService.DeleteMemberAsync(id);
 
-            if (member == null)
+            if (!result.Success)
             {
-                return NotFound(new
-                {
-                    message = "Member not found."
-                });
+                if (result.ErrorMessage == "Member not found.")
+                    return NotFound(new { message = result.ErrorMessage });
+
+                return BadRequest(new { message = result.ErrorMessage });
             }
-
-            _context.members.Remove(member);
-
-            await _context.SaveChangesAsync();
 
             return NoContent();
         }
-           
-        // PATCH: api/members/{id}
-        [HttpPatch("{id:guid}/status")]
-        public async Task<ActionResult<MemberEntity>> UpdateStatus( Guid id,[FromBody] bool isActive)
-        {
-            var member = await _context.members
-                .FirstOrDefaultAsync(x => x.MemberId == id);
 
-            if (member == null)
+        // PATCH: api/members/{id}/status
+        [HttpPatch("{id:guid}/status")]
+        public async Task<IActionResult> UpdateStatus(Guid id,[FromBody] bool isActive)
+        {
+            var result = await _memberService.UpdateStatusAsync(id,isActive);
+
+            if (!result.Success)
             {
                 return NotFound(new
                 {
-                    message = "Member not found."
+                    message = result.ErrorMessage
                 });
             }
 
-            member.IsActive = isActive;
-
-            await _context.SaveChangesAsync();
-
-            return Ok(member);
-        }
-
-        //Validation checking
-        private static string? ValidateMemberType(DateTime dateOfBirth, MemberType memberType)
-        {
-            var age = CalculateAge(dateOfBirth);
-
-            switch (memberType)
-            {
-                case MemberType.Minor when age >= 18:
-                    return "Minor member must be under 18 years old.";
-
-                case MemberType.Major when age < 18:
-                    return "Major member must be 18 years or older.";
-
-                case MemberType.DependantAdult when age < 18:
-                    return "Dependant Adult must be 18 years or older.";
-            }
-
-            return null;
-        }
-        private static int CalculateAge(DateTime dateOfBirth)
-        {
-            var today = DateTime.UtcNow.Date;
-
-            var age = today.Year - dateOfBirth.Year;
-
-            if (dateOfBirth.Date > today.AddYears(-age))
-            {
-                age--;
-            }
-
-            return age;
+            return Ok(result.Member);
         }
     }
+
 }
